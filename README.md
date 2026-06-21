@@ -2,7 +2,7 @@
 
 A bash-based subdomain enumeration and URL collection pipeline for bug bounty
 hunting and authorized security testing. Chains together passive sources,
-active enumeration tools, and web archive mining into a single automated run —
+active enumeration tools, and web archive mining into a single automated run -
 with live host probing, URL collection, outdated CMS detection, and optional
 Discord/Slack/webhook notifications.
 
@@ -17,13 +17,13 @@ Web archive (CDX API + waybackurls)
         ↓
 Merge + dedupe subdomains
         ↓
-httpx — probe for live hosts
+httpx - probe for live hosts
         ↓
 URL collection (katana, gospider, gau, urlfinder, waymore)
         ↓
 Tech stack detection (flags outdated Joomla/Drupal/WordPress)
         ↓
-Webhook notification (Discord / Slack / generic) — optional
+Webhook notification (Discord / Slack / generic) - optional
 ```
 
 ## Quick start
@@ -74,7 +74,7 @@ export SLACK_WEBHOOK="https://hooks.slack.com/services/..."
 export SECURITYTRAILS_API_KEY="..."   # enables haktrails (securitytrails.com)
 export C99_API_KEY="..."               # enables subdomainfinder.c99.nl
 ```
-Without these set, the relevant sources are skipped with a warning — nothing breaks.
+Without these set, the relevant sources are skipped with a warning - nothing breaks.
 
 ## Output structure
 
@@ -105,7 +105,7 @@ source ~/.bashrc
 
 ### Manual installs (no clean package path)
 
-**amass** — no reliable `go install` target on current major versions:
+**amass** - no reliable `go install` target on current major versions:
 ```bash
 brew tap owasp-amass/homebrew-amass
 brew install amass
@@ -114,7 +114,7 @@ Or download a release binary from
 [github.com/owasp-amass/amass/releases](https://github.com/owasp-amass/amass/releases)
 and move it into your `PATH`.
 
-**SubEnum** — standalone bash script with its own dependency installer:
+**SubEnum** - standalone bash script with its own dependency installer:
 ```bash
 git clone https://github.com/bing0o/SubEnum.git
 cd SubEnum
@@ -136,28 +136,28 @@ Create New App → Incoming Webhooks → Add New Webhook to Workspace.
 own listener, n8n, Zapier, Make).
 
 Control notification frequency with `--notify`:
-- `finish` (default) — one message at the end with the run summary
-- `stage` — a message after every stage completes
-- `both` — both
-- `none` — disable even if a webhook URL is set
+- `finish` (default) - one message at the end with the run summary
+- `stage` - a message after every stage completes
+- `both` - both
+- `none` - disable even if a webhook URL is set
 
 ## Notes
 
 - `-r` enables subfinder's recursive enumeration flag.
 - Single domain (`-d`) and multi-domain (`-l`) modes run the identical
-  pipeline — multi-domain loops per-domain sources and passes the list
+  pipeline - multi-domain loops per-domain sources and passes the list
   directly to tools supporting `-dL`.
 
 ## Disclaimer
 
 This tool is intended for use only against systems and assets you are
-explicitly authorized to test — for example, targets in scope of a bug bounty
+explicitly authorized to test - for example, targets in scope of a bug bounty
 or VDP program you're enrolled in, or infrastructure you own. See
 [DISCLAIMER.md](./DISCLAIMER.md) for the full statement.
 
 ## Contributing
 
-Issues and PRs welcome — see [CONTRIBUTING.md](./CONTRIBUTING.md).
+Issues and PRs welcome - see [CONTRIBUTING.md](./CONTRIBUTING.md).
 
 ## License
 
