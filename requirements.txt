@@ -1,0 +1,47 @@
+# requirements.txt — recon.sh dependency list
+#
+# This is not a pip requirements file in the traditional sense (this is a bash
+# tool, not Python), but a single reference list of every binary/package the
+# script calls. Use it as a checklist alongside README.md.
+#
+# Run `./recon.sh --check` at any time to see what's missing on your system.
+# Run `./recon.sh --install` to auto-install everything that CAN be
+# auto-installed (Go + pip tools). Anything marked [MANUAL] below still needs
+# the steps in README.md.
+
+## System packages (apt/brew/pacman etc.)
+curl
+wget
+jq
+git
+golang-go        # provides `go`, needed for all Go-based tools below
+python3
+python3-pip
+
+## Go-based tools (auto-installable via `go install`, see README.md or --install)
+subfinder        # github.com/projectdiscovery/subfinder
+assetfinder      # github.com/tomnomnom/assetfinder
+httpx            # github.com/projectdiscovery/httpx
+katana           # github.com/projectdiscovery/katana
+gospider         # github.com/jaeles-project/gospider
+gau              # github.com/lc/gau
+urlfinder        # github.com/projectdiscovery/urlfinder
+anew             # github.com/tomnomnom/anew
+waybackurls      # github.com/tomnomnom/waybackurls
+haktrails        # github.com/hakluke/haktrails
+
+## Python-based tools (auto-installable via pip, see README.md or --install)
+waymore          # pip install waymore
+
+## [MANUAL] Tools requiring manual download/build — see README.md for exact steps
+amass            # github.com/owasp-amass/amass (no reliable `go install`, use release binary)
+SubEnum          # github.com/bing0o/SubEnum (clone + chmod, not a Go/pip package)
+
+## Optional API keys (export as environment variables before running)
+# SECURITYTRAILS_API_KEY   -> used by haktrails for securitytrails.com lookups
+# C99_API_KEY              -> used for subdomainfinder.c99.nl lookups
+
+## Optional webhook notifications (export OR pass as flags to recon.sh)
+# DISCORD_WEBHOOK   -> Discord incoming webhook URL
+# SLACK_WEBHOOK     -> Slack incoming webhook URL
+# GENERIC_WEBHOOK   -> any endpoint that accepts POST {"text": "..."}

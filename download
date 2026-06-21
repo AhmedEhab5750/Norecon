@@ -1,0 +1,8 @@
+# Recon output directories (from recon.sh)
+recon_*/
+
+# General
+*.log
+.env
+.DS_Store
+*.swp
