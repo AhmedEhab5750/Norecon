@@ -375,7 +375,7 @@ log "=== STAGE 3: web archive ==="
 while read -r d; do
   [[ -z "$d" ]] && continue
   log "web.archive.org CDX -> $d"
-  wget -q -O - "https://web.archive.org/cdx/search/cdx?url=*.${d}&matchType=domain&fl=original&collapse=urlkey" \
+  wget -q -O - "https://web.archive.org/cdx/search/cdx?url=${d}&matchType=domain&fl=original&collapse=urlkey" \
     >> raw/cdx_raw.txt
 done < "$TARGETS_FILE"
 
