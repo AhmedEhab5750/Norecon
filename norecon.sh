@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 #
-# recon.sh — Subdomain enumeration + URL collection pipeline
+# norecon.sh — Subdomain enumeration + URL collection pipeline
 #
-# Run './recon.sh -h' for the full help menu.
-# Run './recon.sh --check' to verify required tools are installed.
-# Run './recon.sh --install' to auto-install what can be auto-installed.
+# Run './norecon.sh -h' for the full help menu.
+# Run './norecon.sh --check' to verify required tools are installed.
+# Run './norecon.sh --install' to auto-install what can be auto-installed.
 #
 # See README.md for manual installation steps (amass, SubEnum, etc.)
 # and requirements.txt for the full dependency list.
@@ -24,13 +24,13 @@ NOTIFY_ON="finish"   # finish | stage | both | none
 
 usage() {
   cat <<'EOF'
-recon.sh — Subdomain enumeration + URL collection pipeline
+norecon.sh — Subdomain enumeration + URL collection pipeline
 
 USAGE:
-  ./recon.sh -d <domain> [options]
-  ./recon.sh -l <domain_list_file> [options]
-  ./recon.sh --check          Verify required tools are installed
-  ./recon.sh --install        Auto-install what can be auto-installed (Go/pip tools)
+  ./norecon.sh -d <domain> [options]
+  ./norecon.sh -l <domain_list_file> [options]
+  ./norecon.sh --check          Verify required tools are installed
+  ./norecon.sh --install        Auto-install what can be auto-installed (Go/pip tools)
 
 TARGET SELECTION:
   -d <domain>          Single target domain (e.g. example.com)
@@ -62,10 +62,10 @@ ENVIRONMENT / API KEYS (optional, improve results):
   C99_API_KEY               Used for subdomainfinder.c99.nl
 
 EXAMPLES:
-  ./recon.sh -d example.com -r --discord "$DISCORD_WEBHOOK"
-  ./recon.sh -l domains.txt -t 100 --notify both --slack "$SLACK_WEBHOOK"
-  ./recon.sh --check
-  ./recon.sh --install
+  ./norecon.sh -d example.com -r --discord "$DISCORD_WEBHOOK"
+  ./norecon.sh -l domains.txt -t 100 --notify both --slack "$SLACK_WEBHOOK"
+  ./norecon.sh --check
+  ./norecon.sh --install
 EOF
   exit 1
 }
@@ -126,7 +126,7 @@ check_tools() {
   else
     warn "Missing tools: ${missing[*]}"
     echo
-    echo "Run './recon.sh --install' to auto-install Go/pip tools."
+    echo "Run './norecon.sh --install' to auto-install Go/pip tools."
     echo "amass and SubEnum need manual installation — see README.md for exact steps."
     echo
     echo "Install hints (Go-based tools):"
@@ -221,7 +221,7 @@ mkdir -p "$OUTDIR"/{raw,subs,urls,httpx,tech}
 cd "$OUTDIR" || exit 1
 
 log "Output directory: $(pwd)"
-notify "stage" "🚀 recon.sh started for: $(cat targets.txt 2>/dev/null | tr '\n' ' ' || echo "$DOMAIN")"
+notify "stage" "🚀 norecon.sh started for: $(cat targets.txt 2>/dev/null | tr '\n' ' ' || echo "$DOMAIN")"
 
 # build the list of target domains we iterate over for per-domain sources
 if [[ -n "$DOMAIN" ]]; then
