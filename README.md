@@ -29,25 +29,25 @@ Webhook notification (Discord / Slack / generic) - optional
 ## Quick start
 
 ```bash
-chmod +x recon.sh
-./recon.sh --check          # see what's missing on your system
-./recon.sh --install        # auto-install what can be auto-installed
+chmod +x norecon.sh
+./norecon.sh --check          # see what's missing on your system
+./norecon.sh --install        # auto-install what can be auto-installed
 # see "Manual installs" below for amass + SubEnum
-./recon.sh -d example.com -r --discord "$DISCORD_WEBHOOK"
+./norecon.sh -d example.com -r --discord "$DISCORD_WEBHOOK"
 ```
 
 Full help menu:
 ```bash
-./recon.sh -h
+./norecon.sh -h
 ```
 
 ## Usage
 
 ```bash
-./recon.sh -d <domain> [options]              # single target
-./recon.sh -l <domain_list_file> [options]    # multiple targets
-./recon.sh --check                            # dependency check
-./recon.sh --install                          # auto-install Go/pip tools
+./norecon.sh -d <domain> [options]              # single target
+./norecon.sh -l <domain_list_file> [options]    # multiple targets
+./norecon.sh --check                            # dependency check
+./norecon.sh --install                          # auto-install Go/pip tools
 ```
 
 | Flag | Description |
@@ -92,7 +92,7 @@ recon_<domain>_<timestamp>/
 
 ## Installation
 
-### Auto-installable (`./recon.sh --install`)
+### Auto-installable (`./norecon.sh --install`)
 Requires Go and Python3/pip already on your system. Installs: subfinder,
 assetfinder, httpx, katana, gospider, gau, urlfinder, anew, waybackurls,
 haktrails, waymore.
