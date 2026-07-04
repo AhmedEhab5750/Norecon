@@ -120,7 +120,7 @@ git clone https://github.com/bing0o/SubEnum.git
 cd SubEnum
 chmod +x setup.sh
 ./setup.sh
-sudo mv subenum.sh /usr/local/bin/subenum
+sudo mv subenum.sh /usr/bin/subenum
 ```
 
 See [requirements.txt](./requirements.txt) for the full dependency checklist.
