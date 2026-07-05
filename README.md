@@ -57,11 +57,54 @@ Full help menu:
 | `-o <dir>` | Output directory (default: `recon_<domain>_<timestamp>`) |
 | `-r` | Enable recursive subfinder enumeration |
 | `-t <num>` | httpx threads (default: 50) |
+| `--start-stage <num>` | Start from stage N (1-7, default: 1). Skips earlier stages. |
 | `--discord <url>` | Discord webhook for notifications |
 | `--slack <url>` | Slack webhook for notifications |
 | `--webhook <url>` | Generic JSON webhook (`POST {"text": "..."}`) |
 | `--notify <mode>` | `finish` \| `stage` \| `both` \| `none` (default: `finish`) |
 | `-h`, `--help` | Full help menu |
+
+### Stage breakdown (for --start-stage)
+
+1. Passive subdomain sources (crt.sh, urlscan.io, otx, jldc.me, shrewdeye, haktrails, subenum)
+2. Active enumeration (subfinder, assetfinder, amass)
+3. Web archive collection (CDX API, waybackurls)
+4. Merge and dedupe subdomains
+5. httpx probing - detect live hosts
+6. URL collection (katana, gospider, waymore, gau, urlfinder)
+7. Tech stack detection (CMS detection - Joomla/Drupal/WordPress)
+
+### Examples
+
+Single domain, run all stages (default):
+```bash
+./norecon.sh -d example.com
+```
+
+Single domain, recursive subfinder, enable Discord notifications:
+```bash
+./norecon.sh -d example.com -r --discord "$DISCORD_WEBHOOK"
+```
+
+Skip stage 1-4 (already have subdomains), jump to httpx probing:
+```bash
+./norecon.sh -d example.com --start-stage 5
+```
+
+Only run URL collection (stage 6):
+```bash
+./norecon.sh -d example.com --start-stage 6
+```
+
+Only run tech detection (stage 7):
+```bash
+./norecon.sh -d example.com --start-stage 7
+```
+
+Multi-domain scan with stage notifications:
+```bash
+./norecon.sh -l domains.txt -t 100 --notify both --slack "$SLACK_WEBHOOK"
+```
 
 You can also export webhook URLs instead of passing flags every time:
 ```bash
@@ -127,10 +170,10 @@ See [requirements.txt](./requirements.txt) for the full dependency checklist.
 
 ## Webhook notifications
 
-**Getting a Discord webhook URL:** Server Settings → Integrations → Webhooks → New Webhook.
+**Getting a Discord webhook URL:** Server Settings - Integrations - Webhooks - New Webhook.
 
-**Getting a Slack webhook URL:** [api.slack.com/apps](https://api.slack.com/apps) →
-Create New App → Incoming Webhooks → Add New Webhook to Workspace.
+**Getting a Slack webhook URL:** [api.slack.com/apps](https://api.slack.com/apps) -
+Create New App - Incoming Webhooks - Add New Webhook to Workspace.
 
 **Generic webhook:** any endpoint accepting `POST {"text": "..."}` (e.g. your
 own listener, n8n, Zapier, Make).
@@ -147,6 +190,8 @@ Control notification frequency with `--notify`:
 - Single domain (`-d`) and multi-domain (`-l`) modes run the identical
   pipeline - multi-domain loops per-domain sources and passes the list
   directly to tools supporting `-dL`.
+- `--start-stage` is useful when re-running recon on a target where you already have
+  subdomains and just want to collect new URLs or run tech detection.
 
 ## Disclaimer
 
