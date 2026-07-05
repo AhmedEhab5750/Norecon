@@ -21,6 +21,7 @@ DISCORD_WEBHOOK="${DISCORD_WEBHOOK:-}"
 SLACK_WEBHOOK="${SLACK_WEBHOOK:-}"
 GENERIC_WEBHOOK="${GENERIC_WEBHOOK:-}"
 NOTIFY_ON="finish"   # finish | stage | both | none
+START_STAGE=1        # start from this stage (1-7)
 
 usage() {
   cat <<'EOF'
@@ -40,6 +41,7 @@ GENERAL OPTIONS:
   -o <dir>             Output directory (default: recon_<domain>_<timestamp>)
   -r                   Enable recursive subfinder enumeration
   -t <num>             httpx threads (default: 50)
+  --start-stage <num>  Start from stage N (1-7, default: 1). Skips earlier stages.
   -h, --help           Show this help menu
 
 NOTIFICATIONS (webhooks):
@@ -64,6 +66,7 @@ ENVIRONMENT / API KEYS (optional, improve results):
 EXAMPLES:
   ./norecon.sh -d example.com -r --discord "$DISCORD_WEBHOOK"
   ./norecon.sh -l domains.txt -t 100 --notify both --slack "$SLACK_WEBHOOK"
+  ./norecon.sh -d example.com --start-stage 5
   ./norecon.sh --check
   ./norecon.sh --install
 EOF
@@ -194,6 +197,7 @@ while [[ $# -gt 0 ]]; do
     -o) OUTDIR="$2"; shift 2 ;;
     -r) RECURSIVE=true; shift ;;
     -t) THREADS="$2"; shift 2 ;;
+    --start-stage) START_STAGE="$2"; shift 2 ;;
     -h|--help) usage ;;
     --discord) DISCORD_WEBHOOK="$2"; shift 2 ;;
     --slack) SLACK_WEBHOOK="$2"; shift 2 ;;
@@ -235,6 +239,8 @@ TARGETS_FILE="targets.txt"
 # =========================================================
 # STAGE 1 — Passive subdomain sources (per-domain APIs)
 # =========================================================
+
+if [[ $START_STAGE -le 1 ]]; then
 
 fetch_urlscan() {
   local d="$1"
@@ -330,7 +336,15 @@ while read -r d; do
   fetch_subenum "$d"
 done < "$TARGETS_FILE"
 notify "stage" "✅ Stage 1 done: passive per-domain sources collected"
+
+fi  # END STAGE 1
+
 # =========================================================
+# STAGE 2
+# =========================================================
+
+if [[ $START_STAGE -le 2 ]]; then
+
 log "=== STAGE 2: subfinder / assetfinder / amass ==="
 
 if [[ -n "$DOMAIN" ]]; then
@@ -368,9 +382,14 @@ else
 fi
 notify "stage" "✅ Stage 2 done: subfinder / assetfinder / amass complete"
 
+fi  # END STAGE 2
+
 # =========================================================
 # STAGE 3 — Web Archive (CDX + waybackurls)
 # =========================================================
+
+if [[ $START_STAGE -le 3 ]]; then
+
 log "=== STAGE 3: web archive ==="
 while read -r d; do
   [[ -z "$d" ]] && continue
@@ -393,9 +412,14 @@ cat raw/cdx_raw.txt raw/wayback.txt 2>/dev/null \
   >> raw/archive_hosts.txt
 notify "stage" "✅ Stage 3 done: web archive collection complete"
 
+fi  # END STAGE 3
+
 # =========================================================
 # STAGE 4 — Merge & dedupe subdomains
 # =========================================================
+
+if [[ $START_STAGE -le 4 ]]; then
+
 log "=== STAGE 4: merge + dedupe subdomains ==="
 
 cat raw/urlscan.txt raw/otx.txt raw/jldc.txt raw/crtsh.txt raw/c99.txt \
@@ -421,17 +445,27 @@ sort -u -o subs/subsnew.txt subs/subsnew.txt
 ok "Total unique subdomains: $(wc -l < subs/subsnew.txt)"
 notify "stage" "✅ Stage 4 done: $(wc -l < subs/subsnew.txt) unique subdomains found"
 
+fi  # END STAGE 4
+
 # =========================================================
 # STAGE 5 — Probe live hosts (httpx)
 # =========================================================
+
+if [[ $START_STAGE -le 5 ]]; then
+
 log "=== STAGE 5: httpx probing ==="
 cat subs/subsnew.txt | httpx -silent -threads "$THREADS" -o httpx/httpx.txt
 ok "Live hosts: $(wc -l < httpx/httpx.txt)"
 notify "stage" "✅ Stage 5 done: $(wc -l < httpx/httpx.txt) live hosts found"
 
+fi  # END STAGE 5
+
 # =========================================================
 # STAGE 6 — URL collection (katana, gospider, waymore, gau, urlfinder)
 # =========================================================
+
+if [[ $START_STAGE -le 6 ]]; then
+
 log "=== STAGE 6: URL collection ==="
 
 if [[ -s httpx/httpx.txt ]]; then
@@ -471,15 +505,22 @@ rm -f urls/urls_combined.txt
 ok "Total unique URLs: $(wc -l < urls/allurls.txt)"
 notify "stage" "✅ Stage 6 done: $(wc -l < urls/allurls.txt) unique URLs collected"
 
+fi  # END STAGE 6
+
 # =========================================================
 # STAGE 7 — Tech stack detection (outdated CMS)
 # =========================================================
+
+if [[ $START_STAGE -le 7 ]]; then
+
 log "=== STAGE 7: tech stack detection ==="
 cat subs/subsnew.txt | httpx -silent -title -tech-detect -status-code -o tech/tech_full.txt
 grep -i "Joomla\|Drupal\|WordPress" tech/tech_full.txt > tech/cms_hits.txt || true
 
 ok "CMS matches saved to tech/cms_hits.txt ($(wc -l < tech/cms_hits.txt 2>/dev/null || echo 0) hits)"
 notify "stage" "✅ Stage 7 done: tech detection complete ($(wc -l < tech/cms_hits.txt 2>/dev/null || echo 0) CMS hits)"
+
+fi  # END STAGE 7
 
 # =========================================================
 # Summary
