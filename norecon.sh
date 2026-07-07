@@ -93,21 +93,24 @@ notify() {
   fi
 
   if [[ -n "$DISCORD_WEBHOOK" ]]; then
-    curl -s -H "Content-Type: application/json" \
-      -d "$(jq -n --arg c "$msg" '{content: $c}')" \
-      "$DISCORD_WEBHOOK" >/dev/null 2>&1
+    ( curl -s --connect-timeout 5 --max-time 10 \
+        -H "Content-Type: application/json" \
+        -d "$(jq -n --arg c "$msg" '{content: $c}')" \
+        "$DISCORD_WEBHOOK" >/dev/null 2>&1 & )
   fi
 
   if [[ -n "$SLACK_WEBHOOK" ]]; then
-    curl -s -H "Content-Type: application/json" \
-      -d "$(jq -n --arg t "$msg" '{text: $t}')" \
-      "$SLACK_WEBHOOK" >/dev/null 2>&1
+    ( curl -s --connect-timeout 5 --max-time 10 \
+        -H "Content-Type: application/json" \
+        -d "$(jq -n --arg t "$msg" '{text: $t}')" \
+        "$SLACK_WEBHOOK" >/dev/null 2>&1 & )
   fi
 
   if [[ -n "$GENERIC_WEBHOOK" ]]; then
-    curl -s -H "Content-Type: application/json" \
-      -d "$(jq -n --arg t "$msg" '{text: $t}')" \
-      "$GENERIC_WEBHOOK" >/dev/null 2>&1
+    ( curl -s --connect-timeout 5 --max-time 10 \
+        -H "Content-Type: application/json" \
+        -d "$(jq -n --arg t "$msg" '{text: $t}')" \
+        "$GENERIC_WEBHOOK" >/dev/null 2>&1 & )
   fi
 }
 
