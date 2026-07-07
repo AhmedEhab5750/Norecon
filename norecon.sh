@@ -23,6 +23,12 @@ GENERIC_WEBHOOK="${GENERIC_WEBHOOK:-}"
 NOTIFY_ON="finish"   # finish | stage | both | none
 START_STAGE=1        # start from this stage (1-7)
 
+# curl/wget timeout settings (seconds) - prevents the pipeline from hanging
+# forever on a slow or unreachable external service.
+CURL_CONNECT_TIMEOUT=5
+CURL_MAX_TIME=30
+WGET_TIMEOUT=20
+
 usage() {
   cat <<'EOF'
 norecon.sh — Subdomain enumeration + URL collection pipeline
@@ -80,6 +86,7 @@ err()  { echo -e "\033[1;31m[-]\033[0m $*" >&2; }
 
 # ---------- webhook notifications ----------
 # notify <event_type:stage|finish> <message>
+# Backgrounded + timed out so a slow/dead webhook never blocks recon stages.
 notify() {
   local event="$1"
   local msg="$2"
@@ -93,21 +100,21 @@ notify() {
   fi
 
   if [[ -n "$DISCORD_WEBHOOK" ]]; then
-    ( curl -s --connect-timeout 5 --max-time 10 \
+    ( curl -s --connect-timeout "$CURL_CONNECT_TIMEOUT" --max-time "$CURL_MAX_TIME" \
         -H "Content-Type: application/json" \
         -d "$(jq -n --arg c "$msg" '{content: $c}')" \
         "$DISCORD_WEBHOOK" >/dev/null 2>&1 & )
   fi
 
   if [[ -n "$SLACK_WEBHOOK" ]]; then
-    ( curl -s --connect-timeout 5 --max-time 10 \
+    ( curl -s --connect-timeout "$CURL_CONNECT_TIMEOUT" --max-time "$CURL_MAX_TIME" \
         -H "Content-Type: application/json" \
         -d "$(jq -n --arg t "$msg" '{text: $t}')" \
         "$SLACK_WEBHOOK" >/dev/null 2>&1 & )
   fi
 
   if [[ -n "$GENERIC_WEBHOOK" ]]; then
-    ( curl -s --connect-timeout 5 --max-time 10 \
+    ( curl -s --connect-timeout "$CURL_CONNECT_TIMEOUT" --max-time "$CURL_MAX_TIME" \
         -H "Content-Type: application/json" \
         -d "$(jq -n --arg t "$msg" '{text: $t}')" \
         "$GENERIC_WEBHOOK" >/dev/null 2>&1 & )
@@ -133,7 +140,7 @@ check_tools() {
     warn "Missing tools: ${missing[*]}"
     echo
     echo "Run './norecon.sh --install' to auto-install Go/pip tools."
-    echo "amass and SubEnum need manual installation — see README.md for exact steps."
+    echo "amass and SubEnum need manual installation - see README.md for exact steps."
     echo
     echo "Install hints (Go-based tools):"
     echo "  go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest"
@@ -183,7 +190,7 @@ install_tools() {
 
   echo
   ok "Go/pip tools installed (check that \$GOPATH/bin or \$HOME/go/bin is in your PATH)."
-  warn "amass and SubEnum require manual installation — see README.md for exact steps."
+  warn "amass and SubEnum require manual installation - see README.md for exact steps."
 }
 
 if [[ "${1:-}" == "--install" ]]; then
@@ -227,10 +234,9 @@ fi
 mkdir -p "$OUTDIR"/{raw,subs,urls,httpx,tech}
 cd "$OUTDIR" || exit 1
 
-log "Output directory: $(pwd)"
-notify "stage" "🚀 norecon.sh started for: $(cat targets.txt 2>/dev/null | tr '\n' ' ' || echo "$DOMAIN")"
-
 # build the list of target domains we iterate over for per-domain sources
+# (moved BEFORE the first notify call so the "started for: ..." message
+# actually has targets.txt to read from)
 if [[ -n "$DOMAIN" ]]; then
   echo "$DOMAIN" > targets.txt
 else
@@ -238,6 +244,9 @@ else
 fi
 
 TARGETS_FILE="targets.txt"
+
+log "Output directory: $(pwd)"
+notify "stage" "🚀 norecon.sh started for: $(cat targets.txt 2>/dev/null | tr '\n' ' ')"
 
 # =========================================================
 # STAGE 1 — Passive subdomain sources (per-domain APIs)
@@ -248,7 +257,8 @@ if [[ $START_STAGE -le 1 ]]; then
 fetch_urlscan() {
   local d="$1"
   log "urlscan.io -> $d"
-  curl -s "https://urlscan.io/api/v1/search/?q=domain:$d&size=10000" \
+  curl -s --connect-timeout "$CURL_CONNECT_TIMEOUT" --max-time "$CURL_MAX_TIME" \
+    "https://urlscan.io/api/v1/search/?q=domain:$d&size=10000" \
     | jq -r '.results[]?.page.domain' 2>/dev/null \
     | grep -i "\.$d\$\|^$d\$" >> raw/urlscan.txt
 }
@@ -256,21 +266,26 @@ fetch_urlscan() {
 fetch_otx() {
   local d="$1"
   log "otx.alienvault.com -> $d"
-  curl -s "https://otx.alienvault.com/api/v1/indicators/domain/$d/passive_dns" \
+  curl -s --connect-timeout "$CURL_CONNECT_TIMEOUT" --max-time "$CURL_MAX_TIME" \
+    "https://otx.alienvault.com/api/v1/indicators/domain/$d/passive_dns" \
     | jq -r '.passive_dns[]?.hostname' 2>/dev/null >> raw/otx.txt
 }
 
 fetch_jldc() {
   local d="$1"
   log "jldc.me -> $d"
-  curl -s "https://jldc.me/anubis/subdomains/$d" \
+  curl -s --connect-timeout "$CURL_CONNECT_TIMEOUT" --max-time "$CURL_MAX_TIME" \
+    "https://jldc.me/anubis/subdomains/$d" \
     | jq -r '.[]?' 2>/dev/null >> raw/jldc.txt
 }
 
 fetch_crtsh() {
   local d="$1"
   log "crt.sh -> $d"
-  curl -s "https://crt.sh/?q=%25.$d&output=json" \
+  # crt.sh can be slow/flaky and return very large JSON for big orgs -
+  # give it a longer max-time than the other sources.
+  curl -s --connect-timeout "$CURL_CONNECT_TIMEOUT" --max-time 60 \
+    "https://crt.sh/?q=%25.$d&output=json" \
     | jq -r '.[]?.name_value' 2>/dev/null \
     | sed 's/\*\.//g' >> raw/crtsh.txt
 }
@@ -279,7 +294,8 @@ fetch_c99() {
   local d="$1"
   if [[ -n "${C99_API_KEY:-}" ]]; then
     log "subdomainfinder.c99.nl -> $d"
-    curl -s "https://api.c99.nl/subdomainfinder?key=${C99_API_KEY}&domain=$d&json" \
+    curl -s --connect-timeout "$CURL_CONNECT_TIMEOUT" --max-time "$CURL_MAX_TIME" \
+      "https://api.c99.nl/subdomainfinder?key=${C99_API_KEY}&domain=$d&json" \
       | jq -r '.subdomains[]?.subdomain' 2>/dev/null >> raw/c99.txt
   else
     warn "Skipping c99.nl (set C99_API_KEY to enable)"
@@ -289,7 +305,8 @@ fetch_c99() {
 fetch_shrewdeye() {
   local d="$1"
   log "shrewdeye.app -> $d"
-  wget -q "https://shrewdeye.app/domains/${d}.txt" -O "raw/shrewdeye_${d}.txt"
+  wget -q --timeout="$WGET_TIMEOUT" --tries=1 \
+    "https://shrewdeye.app/domains/${d}.txt" -O "raw/shrewdeye_${d}.txt"
   if [[ -s "raw/shrewdeye_${d}.txt" ]]; then
     cat "raw/shrewdeye_${d}.txt" >> raw/shrewdeye.txt
   fi
@@ -322,7 +339,7 @@ fetch_subenum() {
     "$bin" -d "$d" -r -o "raw/subenum_${d}.txt" 2>/dev/null
     [[ -s "raw/subenum_${d}.txt" ]] && cat "raw/subenum_${d}.txt" >> raw/subenum.txt
   else
-    warn "Skipping SubEnum (not found — see README.md to install)"
+    warn "Skipping SubEnum (not found - see README.md to install)"
   fi
 }
 
@@ -397,7 +414,8 @@ log "=== STAGE 3: web archive ==="
 while read -r d; do
   [[ -z "$d" ]] && continue
   log "web.archive.org CDX -> $d"
-  wget -q -O - "https://web.archive.org/cdx/search/cdx?url=${d}&matchType=domain&fl=original&collapse=urlkey" \
+  wget -q --timeout="$WGET_TIMEOUT" --tries=1 -O - \
+    "https://web.archive.org/cdx/search/cdx?url=${d}&matchType=domain&fl=original&collapse=urlkey" \
     >> raw/cdx_raw.txt
 done < "$TARGETS_FILE"
 
