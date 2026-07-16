@@ -23,6 +23,11 @@ GENERIC_WEBHOOK="${GENERIC_WEBHOOK:-}"
 NOTIFY_ON="finish"   # finish | stage | both | none
 START_STAGE=1        # start from this stage (1-7)
 
+# out-of-scope exclusion
+EXCLUDE_LIST=()       # out-of-scope domains/subdomains (repeatable via --exclude)
+EXCLUDE_FILE=""       # file with one excluded pattern per line
+EXCLUDE_REGEX=""      # built automatically from EXCLUDE_LIST/EXCLUDE_FILE, don't set directly
+
 # curl/wget timeout settings (seconds) - prevents the pipeline from hanging
 # forever on a slow or unreachable external service.
 CURL_CONNECT_TIMEOUT=5
@@ -48,6 +53,9 @@ GENERAL OPTIONS:
   -r                   Enable recursive subfinder enumeration
   -t <num>             httpx threads (default: 50)
   --start-stage <num>  Start from stage N (1-7, default: 1). Skips earlier stages.
+  --exclude <sub/domain>   Exclude an out-of-scope subdomain/domain from every stage
+                            (repeatable, e.g. --exclude community.example.com)
+  --exclude-file <file>    File with one excluded subdomain/domain per line
   -h, --help           Show this help menu
 
 NOTIFICATIONS (webhooks):
@@ -73,6 +81,8 @@ EXAMPLES:
   ./norecon.sh -d example.com -r --discord "$DISCORD_WEBHOOK"
   ./norecon.sh -l domains.txt -t 100 --notify both --slack "$SLACK_WEBHOOK"
   ./norecon.sh -d example.com --start-stage 5
+  ./norecon.sh -d example.com --exclude community.example.com --exclude staging.example.com
+  ./norecon.sh -d example.com --exclude-file out_of_scope.txt
   ./norecon.sh --check
   ./norecon.sh --install
 EOF
@@ -208,6 +218,8 @@ while [[ $# -gt 0 ]]; do
     -r) RECURSIVE=true; shift ;;
     -t) THREADS="$2"; shift 2 ;;
     --start-stage) START_STAGE="$2"; shift 2 ;;
+    --exclude) EXCLUDE_LIST+=("$2"); shift 2 ;;
+    --exclude-file) EXCLUDE_FILE="$2"; shift 2 ;;
     -h|--help) usage ;;
     --discord) DISCORD_WEBHOOK="$2"; shift 2 ;;
     --slack) SLACK_WEBHOOK="$2"; shift 2 ;;
@@ -220,6 +232,35 @@ done
 if [[ -z "$DOMAIN" && -z "$DOMAIN_LIST" ]]; then
   err "You must provide either -d <domain> or -l <domain_list_file>"
   usage
+fi
+
+# ---------- build the out-of-scope exclusion regex ----------
+# EXCLUDE_FILE is read relative to the CWD at invocation time, i.e. before
+# we cd into OUTDIR below - so a relative path like "out_of_scope.txt"
+# refers to the directory norecon.sh was launched from.
+if [[ -n "$EXCLUDE_FILE" ]]; then
+  if [[ -f "$EXCLUDE_FILE" ]]; then
+    while IFS= read -r line; do
+      line="$(echo "$line" | tr -d '[:space:]')"
+      [[ -z "$line" ]] && continue
+      [[ "$line" == \#* ]] && continue
+      EXCLUDE_LIST+=("$line")
+    done < "$EXCLUDE_FILE"
+  else
+    warn "--exclude-file '$EXCLUDE_FILE' not found, ignoring"
+  fi
+fi
+
+if [[ ${#EXCLUDE_LIST[@]} -gt 0 ]]; then
+  for pat in "${EXCLUDE_LIST[@]}"; do
+    [[ -z "$pat" ]] && continue
+    esc=$(echo "$pat" | tr 'A-Z' 'a-z' | sed 's/\./\\./g')
+    if [[ -n "$EXCLUDE_REGEX" ]]; then
+      EXCLUDE_REGEX="${EXCLUDE_REGEX}|(^|\\.)${esc}\$"
+    else
+      EXCLUDE_REGEX="(^|\\.)${esc}\$"
+    fi
+  done
 fi
 
 DATE_TAG=$(date +%Y%m%d_%H%M%S)
@@ -246,6 +287,9 @@ fi
 TARGETS_FILE="targets.txt"
 
 log "Output directory: $(pwd)"
+if [[ -n "$EXCLUDE_REGEX" ]]; then
+  log "Out-of-scope exclusions active: ${EXCLUDE_LIST[*]}"
+fi
 notify "stage" "🚀 norecon.sh started for: $(cat targets.txt 2>/dev/null | tr '\n' ' ')"
 
 # =========================================================
@@ -463,6 +507,13 @@ cat subs/subsnew.txt | anew subs/subsnew_deduped.txt > /dev/null
 mv subs/subsnew_deduped.txt subs/subsnew.txt
 sort -u -o subs/subsnew.txt subs/subsnew.txt
 
+# drop out-of-scope subdomains/domains before they ever reach later stages
+if [[ -n "$EXCLUDE_REGEX" ]]; then
+  grep -viE "$EXCLUDE_REGEX" subs/subsnew.txt > subs/subsnew.tmp || true
+  mv subs/subsnew.tmp subs/subsnew.txt
+  ok "Applied out-of-scope exclusions to subsnew.txt: ${EXCLUDE_LIST[*]}"
+fi
+
 ok "Total unique subdomains: $(wc -l < subs/subsnew.txt)"
 notify "stage" "✅ Stage 4 done: $(wc -l < subs/subsnew.txt) unique subdomains found"
 
@@ -476,6 +527,14 @@ if [[ $START_STAGE -le 5 ]]; then
 
 log "=== STAGE 5: httpx probing ==="
 cat subs/subsnew.txt | httpx -silent -threads "$THREADS" -o httpx/httpx.txt
+
+# safety net in case an excluded host got into subsnew.txt some other way
+# (e.g. subsnew.txt was supplied/edited manually before this stage ran)
+if [[ -n "$EXCLUDE_REGEX" && -f httpx/httpx.txt ]]; then
+  grep -viE "$EXCLUDE_REGEX" httpx/httpx.txt > httpx/httpx.tmp || true
+  mv httpx/httpx.tmp httpx/httpx.txt
+fi
+
 ok "Live hosts: $(wc -l < httpx/httpx.txt)"
 notify "stage" "✅ Stage 5 done: $(wc -l < httpx/httpx.txt) live hosts found"
 
@@ -491,7 +550,11 @@ log "=== STAGE 6: URL collection ==="
 
 if [[ -s httpx/httpx.txt ]]; then
   log "katana"
-  katana -list httpx/httpx.txt -o urls/katana.txt
+  if [[ -n "$EXCLUDE_REGEX" ]]; then
+    katana -list httpx/httpx.txt -cos "$EXCLUDE_REGEX" -o urls/katana.txt
+  else
+    katana -list httpx/httpx.txt -o urls/katana.txt
+  fi
 
   log "gospider"
   gospider -S httpx/httpx.txt -o /dev/null \
@@ -522,6 +585,13 @@ cat urls/katana.txt raw/cdx_raw.txt urls/gospider.txt urls/waymore.txt urls/gau.
 cat urls/urls_combined.txt | anew urls/allurls.txt > /dev/null
 sort -u -o urls/allurls.txt urls/allurls.txt
 rm -f urls/urls_combined.txt
+
+# gospider/gau/urlfinder/waymore/CDX all pull from sources that don't respect
+# katana's -cos, so re-filter the merged URL list as a final backstop
+if [[ -n "$EXCLUDE_REGEX" && -f urls/allurls.txt ]]; then
+  grep -viE "$EXCLUDE_REGEX" urls/allurls.txt > urls/allurls.tmp || true
+  mv urls/allurls.tmp urls/allurls.txt
+fi
 
 ok "Total unique URLs: $(wc -l < urls/allurls.txt)"
 notify "stage" "✅ Stage 6 done: $(wc -l < urls/allurls.txt) unique URLs collected"
