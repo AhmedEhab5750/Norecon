@@ -110,24 +110,69 @@ notify() {
   fi
 
   if [[ -n "$DISCORD_WEBHOOK" ]]; then
-    ( curl -s --connect-timeout "$CURL_CONNECT_TIMEOUT" --max-time "$CURL_MAX_TIME" \
-        -H "Content-Type: application/json" \
-        -d "$(jq -n --arg c "$msg" '{content: $c}')" \
-        "$DISCORD_WEBHOOK" >/dev/null 2>&1 & )
+    local d_payload
+    d_payload="$(jq -n --arg c "$msg" '{content: $c}' 2>/dev/null)"
+    if [[ -z "$d_payload" ]]; then
+      err "Discord notify skipped: jq failed to build the JSON payload (is jq installed and on PATH?)"
+    else
+      (
+        local d_tmp d_code
+        d_tmp="$(mktemp)"
+        d_code=$(curl -s -o "$d_tmp" -w "%{http_code}" \
+          --connect-timeout "$CURL_CONNECT_TIMEOUT" --max-time "$CURL_MAX_TIME" \
+          -H "Content-Type: application/json" \
+          -d "$d_payload" \
+          "$DISCORD_WEBHOOK" 2>/dev/null)
+        if [[ "$d_code" != "200" && "$d_code" != "204" ]]; then
+          err "Discord webhook failed (HTTP ${d_code:-no response}): $(cat "$d_tmp" 2>/dev/null)"
+        fi
+        rm -f "$d_tmp"
+      ) &
+    fi
   fi
 
   if [[ -n "$SLACK_WEBHOOK" ]]; then
-    ( curl -s --connect-timeout "$CURL_CONNECT_TIMEOUT" --max-time "$CURL_MAX_TIME" \
-        -H "Content-Type: application/json" \
-        -d "$(jq -n --arg t "$msg" '{text: $t}')" \
-        "$SLACK_WEBHOOK" >/dev/null 2>&1 & )
+    local s_payload
+    s_payload="$(jq -n --arg t "$msg" '{text: $t}' 2>/dev/null)"
+    if [[ -z "$s_payload" ]]; then
+      err "Slack notify skipped: jq failed to build the JSON payload (is jq installed and on PATH?)"
+    else
+      (
+        local s_tmp s_code
+        s_tmp="$(mktemp)"
+        s_code=$(curl -s -o "$s_tmp" -w "%{http_code}" \
+          --connect-timeout "$CURL_CONNECT_TIMEOUT" --max-time "$CURL_MAX_TIME" \
+          -H "Content-Type: application/json" \
+          -d "$s_payload" \
+          "$SLACK_WEBHOOK" 2>/dev/null)
+        if [[ "$s_code" != "200" ]]; then
+          err "Slack webhook failed (HTTP ${s_code:-no response}): $(cat "$s_tmp" 2>/dev/null)"
+        fi
+        rm -f "$s_tmp"
+      ) &
+    fi
   fi
 
   if [[ -n "$GENERIC_WEBHOOK" ]]; then
-    ( curl -s --connect-timeout "$CURL_CONNECT_TIMEOUT" --max-time "$CURL_MAX_TIME" \
-        -H "Content-Type: application/json" \
-        -d "$(jq -n --arg t "$msg" '{text: $t}')" \
-        "$GENERIC_WEBHOOK" >/dev/null 2>&1 & )
+    local g_payload
+    g_payload="$(jq -n --arg t "$msg" '{text: $t}' 2>/dev/null)"
+    if [[ -z "$g_payload" ]]; then
+      err "Generic webhook notify skipped: jq failed to build the JSON payload (is jq installed and on PATH?)"
+    else
+      (
+        local g_tmp g_code
+        g_tmp="$(mktemp)"
+        g_code=$(curl -s -o "$g_tmp" -w "%{http_code}" \
+          --connect-timeout "$CURL_CONNECT_TIMEOUT" --max-time "$CURL_MAX_TIME" \
+          -H "Content-Type: application/json" \
+          -d "$g_payload" \
+          "$GENERIC_WEBHOOK" 2>/dev/null)
+        if [[ "$g_code" != 2* ]]; then
+          err "Generic webhook failed (HTTP ${g_code:-no response}): $(cat "$g_tmp" 2>/dev/null)"
+        fi
+        rm -f "$g_tmp"
+      ) &
+    fi
   fi
 }
 
@@ -251,14 +296,23 @@ if [[ -n "$EXCLUDE_FILE" ]]; then
   fi
 fi
 
+# Boundary-aware: matches a domain whether the line is a bare hostname
+# (subs/subsnew.txt) or a full URL (httpx.txt / allurls.txt / katana -cos input) -
+# with or without scheme, trailing slash, path, query string, or port.
+# Left boundary:  start-of-line, ".", or "/" (covers "sub.domain" and "http://domain")
+# Right boundary: end-of-line, "/", "?", or an optional ":<port>" before those.
 if [[ ${#EXCLUDE_LIST[@]} -gt 0 ]]; then
   for pat in "${EXCLUDE_LIST[@]}"; do
     [[ -z "$pat" ]] && continue
-    esc=$(echo "$pat" | tr 'A-Z' 'a-z' | sed 's/\./\\./g')
+    # strip a leading scheme if the user pasted a full URL instead of a bare host
+    clean_pat="$(echo "$pat" | sed -E 's#^[a-zA-Z]+://##' | sed 's#/.*##')"
+    [[ -z "$clean_pat" ]] && continue
+    esc=$(echo "$clean_pat" | tr 'A-Z' 'a-z' | sed 's/\./\\./g')
+    piece="(^|[/.])${esc}(:[0-9]+)?([/?]|\$)"
     if [[ -n "$EXCLUDE_REGEX" ]]; then
-      EXCLUDE_REGEX="${EXCLUDE_REGEX}|(^|\\.)${esc}\$"
+      EXCLUDE_REGEX="${EXCLUDE_REGEX}|${piece}"
     else
-      EXCLUDE_REGEX="(^|\\.)${esc}\$"
+      EXCLUDE_REGEX="${piece}"
     fi
   done
 fi
