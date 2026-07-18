@@ -76,7 +76,9 @@ NOTIFICATIONS (webhooks):
 ENVIRONMENT / API KEYS (optional, improve results):
   SECURITYTRAILS_API_KEY   Used by haktrails
   C99_API_KEY               Used for subdomainfinder.c99.nl
-  NETLAS_API_KEY             Used for netlas.io domain search
+  NETLAS_API_KEY             Optional - netlas.io domain search works
+                              anonymously (limited free daily quota); set
+                              this to use your own quota/rate limit instead
 
 EXAMPLES:
   ./norecon.sh -d example.com -r --discord "$DISCORD_WEBHOOK"
@@ -409,21 +411,27 @@ fetch_c99() {
 
 fetch_netlas() {
   local d="$1"
+  log "netlas.io -> $d"
+  # netlas.io's domains endpoint works anonymously (a limited free daily quota) -
+  # no API key required. If NETLAS_API_KEY is set we attach it to get the
+  # higher authenticated rate limit instead of the anonymous one.
   if [[ -n "${NETLAS_API_KEY:-}" ]]; then
-    log "netlas.io -> $d"
     curl -s -G --connect-timeout "$CURL_CONNECT_TIMEOUT" --max-time "$CURL_MAX_TIME" \
       "https://app.netlas.io/api/domains/" \
       --data-urlencode "q=*.$d" \
       --data-urlencode "fields=domain" \
       -H "X-API-Key: ${NETLAS_API_KEY}" \
       | jq -r '.items[]?.data.domain' 2>/dev/null >> raw/netlas.txt
-    # Netlas enforces a hard 1 request/second limit - stay under it since this
-    # function is called once per target domain in the same per-domain loop
-    # as every other stage-1 source.
-    sleep 1
   else
-    warn "Skipping netlas.io (set NETLAS_API_KEY to enable)"
+    curl -s -G --connect-timeout "$CURL_CONNECT_TIMEOUT" --max-time "$CURL_MAX_TIME" \
+      "https://app.netlas.io/api/domains/" \
+      --data-urlencode "q=*.$d" \
+      --data-urlencode "fields=domain" \
+      | jq -r '.items[]?.data.domain' 2>/dev/null >> raw/netlas.txt
   fi
+  # Anonymous access has a small daily quota and the docs note a 1 req/sec
+  # limit even for authenticated calls - stay well under either.
+  sleep 1
 }
 
 fetch_rapiddns() {
