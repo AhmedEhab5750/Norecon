@@ -76,6 +76,7 @@ NOTIFICATIONS (webhooks):
 ENVIRONMENT / API KEYS (optional, improve results):
   SECURITYTRAILS_API_KEY   Used by haktrails
   C99_API_KEY               Used for subdomainfinder.c99.nl
+  NETLAS_API_KEY             Used for netlas.io domain search
 
 EXAMPLES:
   ./norecon.sh -d example.com -r --discord "$DISCORD_WEBHOOK"
@@ -116,17 +117,19 @@ notify() {
       err "Discord notify skipped: jq failed to build the JSON payload (is jq installed and on PATH?)"
     else
       (
-        local d_tmp d_code
+        local d_tmp d_err d_code d_curl_exit
         d_tmp="$(mktemp)"
+        d_err="$(mktemp)"
         d_code=$(curl -s -o "$d_tmp" -w "%{http_code}" \
           --connect-timeout "$CURL_CONNECT_TIMEOUT" --max-time "$CURL_MAX_TIME" \
           -H "Content-Type: application/json" \
           -d "$d_payload" \
-          "$DISCORD_WEBHOOK" 2>/dev/null)
+          "$DISCORD_WEBHOOK" 2>"$d_err")
+        d_curl_exit=$?
         if [[ "$d_code" != "200" && "$d_code" != "204" ]]; then
-          err "Discord webhook failed (HTTP ${d_code:-no response}): $(cat "$d_tmp" 2>/dev/null)"
+          err "Discord webhook failed (curl exit ${d_curl_exit}, HTTP ${d_code:-none}): $(cat "$d_tmp" 2>/dev/null) $(cat "$d_err" 2>/dev/null)"
         fi
-        rm -f "$d_tmp"
+        rm -f "$d_tmp" "$d_err"
       ) &
     fi
   fi
@@ -138,17 +141,19 @@ notify() {
       err "Slack notify skipped: jq failed to build the JSON payload (is jq installed and on PATH?)"
     else
       (
-        local s_tmp s_code
+        local s_tmp s_err s_code s_curl_exit
         s_tmp="$(mktemp)"
+        s_err="$(mktemp)"
         s_code=$(curl -s -o "$s_tmp" -w "%{http_code}" \
           --connect-timeout "$CURL_CONNECT_TIMEOUT" --max-time "$CURL_MAX_TIME" \
           -H "Content-Type: application/json" \
           -d "$s_payload" \
-          "$SLACK_WEBHOOK" 2>/dev/null)
+          "$SLACK_WEBHOOK" 2>"$s_err")
+        s_curl_exit=$?
         if [[ "$s_code" != "200" ]]; then
-          err "Slack webhook failed (HTTP ${s_code:-no response}): $(cat "$s_tmp" 2>/dev/null)"
+          err "Slack webhook failed (curl exit ${s_curl_exit}, HTTP ${s_code:-none}): $(cat "$s_tmp" 2>/dev/null) $(cat "$s_err" 2>/dev/null)"
         fi
-        rm -f "$s_tmp"
+        rm -f "$s_tmp" "$s_err"
       ) &
     fi
   fi
@@ -160,17 +165,19 @@ notify() {
       err "Generic webhook notify skipped: jq failed to build the JSON payload (is jq installed and on PATH?)"
     else
       (
-        local g_tmp g_code
+        local g_tmp g_err g_code g_curl_exit
         g_tmp="$(mktemp)"
+        g_err="$(mktemp)"
         g_code=$(curl -s -o "$g_tmp" -w "%{http_code}" \
           --connect-timeout "$CURL_CONNECT_TIMEOUT" --max-time "$CURL_MAX_TIME" \
           -H "Content-Type: application/json" \
           -d "$g_payload" \
-          "$GENERIC_WEBHOOK" 2>/dev/null)
+          "$GENERIC_WEBHOOK" 2>"$g_err")
+        g_curl_exit=$?
         if [[ "$g_code" != 2* ]]; then
-          err "Generic webhook failed (HTTP ${g_code:-no response}): $(cat "$g_tmp" 2>/dev/null)"
+          err "Generic webhook failed (curl exit ${g_curl_exit}, HTTP ${g_code:-none}): $(cat "$g_tmp" 2>/dev/null) $(cat "$g_err" 2>/dev/null)"
         fi
-        rm -f "$g_tmp"
+        rm -f "$g_tmp" "$g_err"
       ) &
     fi
   fi
@@ -400,6 +407,40 @@ fetch_c99() {
   fi
 }
 
+fetch_netlas() {
+  local d="$1"
+  if [[ -n "${NETLAS_API_KEY:-}" ]]; then
+    log "netlas.io -> $d"
+    curl -s -G --connect-timeout "$CURL_CONNECT_TIMEOUT" --max-time "$CURL_MAX_TIME" \
+      "https://app.netlas.io/api/domains/" \
+      --data-urlencode "q=*.$d" \
+      --data-urlencode "fields=domain" \
+      -H "X-API-Key: ${NETLAS_API_KEY}" \
+      | jq -r '.items[]?.data.domain' 2>/dev/null >> raw/netlas.txt
+    # Netlas enforces a hard 1 request/second limit - stay under it since this
+    # function is called once per target domain in the same per-domain loop
+    # as every other stage-1 source.
+    sleep 1
+  else
+    warn "Skipping netlas.io (set NETLAS_API_KEY to enable)"
+  fi
+}
+
+fetch_rapiddns() {
+  local d="$1"
+  log "rapiddns.io -> $d"
+  local esc
+  esc=$(echo "$d" | sed 's/\./\\./g')
+  # RapidDNS returns a plain HTML table (no JS rendering needed) with one
+  # subdomain per <td> cell in the first column - pull it out with a
+  # boundary-aware lookbehind/lookahead instead of a full HTML parser, same
+  # lightweight approach the archive-hosts extraction in Stage 3 already uses.
+  curl -s --connect-timeout "$CURL_CONNECT_TIMEOUT" --max-time "$CURL_MAX_TIME" \
+    -A "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36" \
+    "https://rapiddns.io/subdomain/${d}?full=1" \
+    | grep -oP "(?<=<td>)[a-zA-Z0-9][a-zA-Z0-9.-]*\\.${esc}(?=</td>)" 2>/dev/null >> raw/rapiddns.txt
+}
+
 fetch_shrewdeye() {
   local d="$1"
   log "shrewdeye.app -> $d"
@@ -449,6 +490,8 @@ while read -r d; do
   fetch_jldc "$d"
   fetch_crtsh "$d"
   fetch_c99 "$d"
+  fetch_netlas "$d"
+  fetch_rapiddns "$d"
   fetch_shrewdeye "$d"
   fetch_haktrails "$d"
   fetch_subenum "$d"
@@ -542,6 +585,7 @@ if [[ $START_STAGE -le 4 ]]; then
 log "=== STAGE 4: merge + dedupe subdomains ==="
 
 cat raw/urlscan.txt raw/otx.txt raw/jldc.txt raw/crtsh.txt raw/c99.txt \
+    raw/netlas.txt raw/rapiddns.txt \
     raw/shrewdeye.txt raw/haktrails.txt raw/subenum.txt \
     raw/subfinder.txt raw/assetfinder.txt raw/amass.txt \
     raw/archive_hosts.txt 2>/dev/null \
