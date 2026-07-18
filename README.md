@@ -9,7 +9,7 @@ filtering, and optional Discord/Slack/webhook notifications.
 ## What it does
 
 ```
-Passive sources (crt.sh, urlscan.io, OTX, jldc.me, shrewdeye.app, ...)
+Passive sources (crt.sh, urlscan.io, OTX, jldc.me, shrewdeye.app, netlas.io, rapiddns.io, ...)
         ↓
 Active tools (subfinder, assetfinder, amass)
         ↓
@@ -68,7 +68,7 @@ Full help menu:
 
 ### Stage breakdown (for --start-stage)
 
-1. Passive subdomain sources (crt.sh, urlscan.io, otx, jldc.me, shrewdeye, haktrails, subenum)
+1. Passive subdomain sources (crt.sh, urlscan.io, otx, jldc.me, shrewdeye, netlas.io, rapiddns.io, haktrails, subenum)
 2. Active enumeration (subfinder, assetfinder, amass)
 3. Web archive collection (CDX API, waybackurls)
 4. Merge and dedupe subdomains — out-of-scope exclusions applied here
@@ -128,8 +128,10 @@ export SLACK_WEBHOOK="https://hooks.slack.com/services/..."
 ```bash
 export SECURITYTRAILS_API_KEY="..."   # enables haktrails (securitytrails.com)
 export C99_API_KEY="..."               # enables subdomainfinder.c99.nl
+export NETLAS_API_KEY="..."             # enables netlas.io domain search
 ```
 Without these set, the relevant sources are skipped with a warning - nothing breaks.
+`rapiddns.io` needs no API key and always runs as part of Stage 1.
 
 ## Out-of-scope filtering (`--exclude` / `--exclude-file`)
 
